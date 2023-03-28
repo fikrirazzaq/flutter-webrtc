@@ -19,6 +19,9 @@ rootProject.allprojects {
         google()
         mavenCentral()
         maven { url 'https://jitpack.io' }
+        flatDir {
+            dirs 'libs'
+        }
     }
 }
 
@@ -49,9 +52,6 @@ android {
 }
 
 dependencies {
-    implementation ("io.livekit:livekit-android:1.1.6") {
-        exclude group: 'com.github.webrtc-sdk', module: 'android'
-    }
     implementation 'com.github.webrtc-sdk:android:104.5112.05'
     implementation "com.twilio:audioswitch:1.1.5"
     implementation 'androidx.annotation:annotation:1.1.0'
