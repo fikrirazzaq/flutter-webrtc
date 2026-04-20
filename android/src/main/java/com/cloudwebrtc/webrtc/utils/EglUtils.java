@@ -3,25 +3,21 @@ package com.cloudwebrtc.webrtc.utils;
 import android.os.Build;
 
 import org.webrtc.EglBase;
+import org.webrtc.EglBase10Impl;
+import org.webrtc.EglBase14Impl;
 
 public class EglUtils {
-    /**
-     * The root {@link EglBase} instance shared by the entire application for
-     * the sake of reducing the utilization of system resources (such as EGL
-     * contexts).
-     */
     private static EglBase rootEglBase;
 
-    /**
-     * Lazily creates and returns the one and only {@link EglBase} which will
-     * serve as the root for all contexts that are needed.
-     */
     public static synchronized EglBase getRootEglBase() {
         if (rootEglBase == null) {
+            // Avoid calling EglBase.create() / createEgl10() — they are static interface methods
+            // that D8 (AGP 8.x) desugars inconsistently when the pre-built AAR and plugin source
+            // are processed in separate compilation units, causing NoSuchMethodError at runtime.
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP)
-                rootEglBase = EglBase.createEgl10(EglBase.CONFIG_PLAIN);
+                rootEglBase = new EglBase10Impl(null, EglBase.CONFIG_PLAIN);
             else
-                rootEglBase = EglBase.create();
+                rootEglBase = new EglBase14Impl(null, EglBase.CONFIG_PLAIN);
         }
 
         return rootEglBase;
