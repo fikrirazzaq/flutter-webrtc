@@ -22,6 +22,7 @@ import io.flutter.embedding.engine.plugins.lifecycle.HiddenLifecycleReference;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.StandardMethodCodec;
 import io.flutter.view.TextureRegistry;
 
 /**
@@ -97,10 +98,15 @@ public class FlutterWebRTCPlugin implements FlutterPlugin, ActivityAware, EventC
         audioSwitchManager = new AudioSwitchManager(context);
         methodCallHandler = new MethodCallHandlerImpl(context, messenger, textureRegistry,
                 audioSwitchManager);
-        methodChannel = new MethodChannel(messenger, "FlutterWebRTC.Method");
+        // Route all MethodChannel calls to a background thread so ensureInitialized()
+        // (which builds PeerConnectionFactory) never blocks the Android main thread.
+        // warmUp() still pre-warms the factory ahead of time for snappier first connect.
+        methodChannel = new MethodChannel(
+                messenger,
+                "FlutterWebRTC.Method",
+                StandardMethodCodec.INSTANCE,
+                messenger.makeBackgroundTaskQueue());
         methodChannel.setMethodCallHandler(methodCallHandler);
-        // Pre-build the PeerConnectionFactory off the main thread so the first
-        // createPeerConnection() doesn't stall the UI thread (ANR on slow/SDK21 devices).
         methodCallHandler.warmUp();
         eventChannel = new EventChannel(messenger, "FlutterWebRTC.Event");
         eventChannel.setStreamHandler(this);
