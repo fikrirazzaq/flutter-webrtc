@@ -111,6 +111,25 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
 
   private Activity activity;
 
+  // Builds the PeerConnectionFactory off the platform main thread.
+  // createPeerConnectionFactory() instantiates a JavaAudioDeviceModule whose native init
+  // calls AudioRecord.getMinBufferSize() — a blocking binder IPC to the audio server. On
+  // slow / SDK21 devices that stalls the main thread long enough to ANR. Pre-building on a
+  // background thread (warmUp(), called at plugin attach) means ensureInitialized() finds
+  // mFactory already set and returns immediately when MethodChannel calls run on main.
+  private final java.util.concurrent.ExecutorService initExecutor =
+          java.util.concurrent.Executors.newSingleThreadExecutor();
+
+  void warmUp() {
+    initExecutor.execute(() -> {
+      try {
+        ensureInitialized();
+      } catch (Throwable t) {
+        Log.e(TAG, "warmUp(): ensureInitialized failed", t);
+      }
+    });
+  }
+
   MethodCallHandlerImpl(Context context, BinaryMessenger messenger, TextureRegistry textureRegistry,
                         @NonNull AudioSwitchManager audioManager) {
     this.context = context;
@@ -141,7 +160,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     mPeerConnectionObservers.clear();
   }
 
-  private void ensureInitialized() {
+  private synchronized void ensureInitialized() {
     if (mFactory != null) {
       return;
     }

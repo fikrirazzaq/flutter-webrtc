@@ -99,6 +99,9 @@ public class FlutterWebRTCPlugin implements FlutterPlugin, ActivityAware, EventC
                 audioSwitchManager);
         methodChannel = new MethodChannel(messenger, "FlutterWebRTC.Method");
         methodChannel.setMethodCallHandler(methodCallHandler);
+        // Pre-build the PeerConnectionFactory off the main thread so the first
+        // createPeerConnection() doesn't stall the UI thread (ANR on slow/SDK21 devices).
+        methodCallHandler.warmUp();
         eventChannel = new EventChannel(messenger, "FlutterWebRTC.Event");
         eventChannel.setStreamHandler(this);
         audioSwitchManager.audioDeviceChangeListener = (devices, currentDevice) -> {
