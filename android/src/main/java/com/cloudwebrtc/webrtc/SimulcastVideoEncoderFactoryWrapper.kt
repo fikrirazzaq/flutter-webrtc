@@ -72,6 +72,20 @@ internal class SimulcastVideoEncoderFactoryWrapper(
             return supportedCodecInfos.toTypedArray()
         }
 
+        // Explicitly implement the VideoEncoderFactory default methods. On minSdk < 24
+        // D8 desugars Java-8 default interface methods, and the desugared forwarder is
+        // not injected into this implementor across the AAR/plugin compilation boundary.
+        // libwebrtc invokes getImplementations()/getEncoderSelector() from native (JNI),
+        // which would otherwise hit AbstractMethodError. See EglBaseFactory for the same
+        // pattern applied to EglBase's static interface methods.
+        override fun getImplementations(): Array<VideoCodecInfo> {
+            return supportedCodecs
+        }
+
+        override fun getEncoderSelector(): VideoEncoderFactory.VideoEncoderSelector? {
+            return null
+        }
+
     }
 
     /**
@@ -210,6 +224,14 @@ internal class SimulcastVideoEncoderFactoryWrapper(
         override fun getSupportedCodecs(): Array<VideoCodecInfo> {
             return factory.supportedCodecs
         }
+
+        override fun getImplementations(): Array<VideoCodecInfo> {
+            return supportedCodecs
+        }
+
+        override fun getEncoderSelector(): VideoEncoderFactory.VideoEncoderSelector? {
+            return null
+        }
     }
 
 
@@ -232,6 +254,14 @@ internal class SimulcastVideoEncoderFactoryWrapper(
 
     override fun getSupportedCodecs(): Array<VideoCodecInfo> {
         return native.supportedCodecs
+    }
+
+    override fun getImplementations(): Array<VideoCodecInfo> {
+        return native.supportedCodecs
+    }
+
+    override fun getEncoderSelector(): VideoEncoderFactory.VideoEncoderSelector? {
+        return null
     }
 
 }
