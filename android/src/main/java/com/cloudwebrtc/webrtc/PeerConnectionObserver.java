@@ -281,6 +281,13 @@ class PeerConnectionObserver implements PeerConnection.Observer, EventChannel.St
     sendEvent(params);
   }
 
+  // Explicit override required: default interface methods in the M104 AAR are desugared away
+  // by D8 when minSdkVersion < 24, so native JNI cannot find them → AbstractMethodError/SIGABRT.
+  @Override
+  public void onIceCandidateError(org.webrtc.IceCandidateErrorEvent event) {
+    Log.d(TAG, "onIceCandidateError url=" + event.url + " errorCode=" + event.errorCode);
+  }
+
   @Override
   public void onSelectedCandidatePairChanged(CandidatePairChangeEvent event) {
       Log.d(TAG, "onSelectedCandidatePairChanged");
