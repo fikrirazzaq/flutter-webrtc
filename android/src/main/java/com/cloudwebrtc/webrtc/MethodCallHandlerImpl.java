@@ -160,6 +160,37 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     mPeerConnectionObservers.clear();
   }
 
+  // Opt-in escape hatch for apps that only ever use WebRTC data channels (no getUserMedia /
+  // createLocalMediaStream calls) — e.g. Kitchen/Runner/Queue in fnbeespos, which run on the
+  // widest range of low-spec/legacy hardware. Building the full media engine there is pure
+  // overhead: it creates the root EGL context, a JavaAudioDeviceModule (which eagerly
+  // constructs AudioRecord/AudioTrack plus HW AEC/NS effect objects), and HW-backed video
+  // encoder/decoder factories (which trigger a MediaCodec capability enumeration) — none of
+  // which a data-channel-only app ever exercises. On 32-bit/low-RAM devices process address
+  // space is the scarce resource, and this is measurable overhead for zero benefit.
+  // Read once from <meta-data android:name="com.cloudwebrtc.webrtc.MEDIA_ENGINE_ENABLED"
+  // android:value="false"/> in the *app's* AndroidManifest.xml (merged into the final
+  // manifest). Absent (the default) preserves today's behaviour for every existing caller.
+  // Ref: P22-3908 investigation, Aug 2026.
+  private Boolean mediaEngineEnabled;
+
+  private boolean isMediaEngineEnabled() {
+    if (mediaEngineEnabled == null) {
+      boolean enabled = true;
+      try {
+        android.content.pm.ApplicationInfo appInfo = context.getPackageManager()
+                .getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA);
+        if (appInfo.metaData != null) {
+          enabled = appInfo.metaData.getBoolean("com.cloudwebrtc.webrtc.MEDIA_ENGINE_ENABLED", true);
+        }
+      } catch (PackageManager.NameNotFoundException e) {
+        Log.w(TAG, "isMediaEngineEnabled(): could not read ApplicationInfo, defaulting to enabled", e);
+      }
+      mediaEngineEnabled = enabled;
+    }
+    return mediaEngineEnabled;
+  }
+
   private synchronized void ensureInitialized() {
     if (mFactory != null) {
       return;
@@ -170,25 +201,37 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
                     .setEnableInternalTracer(true)
                     .createInitializationOptions());
 
-    // Initialize EGL contexts required for HW acceleration.
-    EglBase.Context eglContext = EglUtils.getRootEglBaseContext();
-
     getUserMediaImpl = new GetUserMediaImpl(this, context);
 
-    audioDeviceModule = JavaAudioDeviceModule.builder(context)
-            .setUseHardwareAcousticEchoCanceler(true)
-            .setUseHardwareNoiseSuppressor(true)
-            .setSamplesReadyCallback(getUserMediaImpl.inputSamplesInterceptor)
-            .createAudioDeviceModule();
+    PeerConnectionFactory.Builder factoryBuilder = PeerConnectionFactory.builder()
+            .setOptions(new Options());
 
-    getUserMediaImpl.audioDeviceModule = (JavaAudioDeviceModule) audioDeviceModule;
+    if (isMediaEngineEnabled()) {
+      // Initialize EGL contexts required for HW acceleration.
+      EglBase.Context eglContext = EglUtils.getRootEglBaseContext();
 
-    mFactory = PeerConnectionFactory.builder()
-            .setOptions(new Options())
-            .setVideoEncoderFactory(new SimulcastVideoEncoderFactoryWrapper(eglContext, true, true))
-            .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglContext))
-            .setAudioDeviceModule(audioDeviceModule)
-            .createPeerConnectionFactory();
+      audioDeviceModule = JavaAudioDeviceModule.builder(context)
+              .setUseHardwareAcousticEchoCanceler(true)
+              .setUseHardwareNoiseSuppressor(true)
+              .setSamplesReadyCallback(getUserMediaImpl.inputSamplesInterceptor)
+              .createAudioDeviceModule();
+
+      getUserMediaImpl.audioDeviceModule = (JavaAudioDeviceModule) audioDeviceModule;
+
+      factoryBuilder
+              .setVideoEncoderFactory(new SimulcastVideoEncoderFactoryWrapper(eglContext, true, true))
+              .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglContext))
+              .setAudioDeviceModule(audioDeviceModule);
+    } else {
+      // Software-only factories still satisfy the builder's API contract without touching EGL
+      // or MediaCodec. Leaving setAudioDeviceModule() uncalled makes the native factory fall
+      // back to its own lightweight built-in ADM instead of constructing the Java one.
+      factoryBuilder
+              .setVideoEncoderFactory(new org.webrtc.SoftwareVideoEncoderFactory())
+              .setVideoDecoderFactory(new org.webrtc.SoftwareVideoDecoderFactory());
+    }
+
+    mFactory = factoryBuilder.createPeerConnectionFactory();
   }
 
   @Override

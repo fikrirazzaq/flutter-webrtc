@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:js_util' as jsutil;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -229,11 +230,22 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   Future<bool> audioOutput(String deviceId) async {
     try {
       final element = _audioElement;
-      if (null != element && jsutil.hasProperty(element, 'setSinkId')) {
-        await jsutil.promiseToFuture<void>(
-            jsutil.callMethod(element, 'setSinkId', [deviceId]));
+      if (null != element) {
+        // dart:js_util was removed from the SDK; dart:js_interop_unsafe is
+        // its sanctioned replacement (mirrors the same dynamic-property/
+        // dynamic-method-call API, typed with JS types). fromInteropObject
+        // wraps the dart:html-backed element as a JSObject.
+        final jsElement = JSObject.fromInteropObject(element);
+        if (jsElement.has('setSinkId')) {
+          await jsElement
+              .callMethodVarArgs<JSPromise<JSAny?>>(
+                'setSinkId'.toJS,
+                [deviceId.toJS],
+              )
+              .toDart;
 
-        return true;
+          return true;
+        }
       }
     } catch (e) {
       print('Unable to setSinkId: ${e.toString()}');
